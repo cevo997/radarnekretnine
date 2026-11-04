@@ -1,3 +1,4 @@
+import {selectSearchQueries} from './public-source.mjs';
 import {byPublicationDesc} from './publication-order.mjs';
 import {getDB} from './database';
 import {classifyDiscovery,makeQueries,facebookPage,canonicalDiscoveryURL} from './discovery.mjs';
@@ -18,9 +19,11 @@ export async function promoteDiscovery(id:string,lead:any){const row=await db().
 export async function ignoreDiscovery(id:string){const row=await db().prepare('SELECT payload FROM discoveries WHERE id=?').bind(id).first<{payload:string}>();if(!row)throw Error('Rezultat nije pronađen.');const x=JSON.parse(row.payload);x.state='Ignorisano';x.updated=new Date().toISOString();await db().prepare('UPDATE discoveries SET payload=?,updated=? WHERE id=?').bind(JSON.stringify(x),x.updated,id).run();return{ok:true}}
 export async function runInternetSearch(force=false){const settings=await internetState();if(!settings.configured)return{skipped:true,message:'Samostalna internet pretraga nije povezana. Unesite Tavily API ključ; ChatGPT rezultati mogu se uvesti odmah.'};if(!settings.enabled)return{skipped:true,message:'Samostalna internet pretraga je isključena.'};const now=Date.now();await db().prepare('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)').bind('internet_lock','0').run();const lock=await db().prepare('UPDATE settings SET value=? WHERE key=? AND CAST(value AS INTEGER)<? RETURNING value').bind(String(now),'internet_lock',String(now-(force?180000:290000))).all();if(!lock.results.length)return{skipped:true,message:'Internet provera je u toku ili je nedavno završena.'};const key=await db().prepare('SELECT value FROM settings WHERE key=?').bind('tavily_api_key').first<{value:string}>();
  const selected=new Set((await getSources()).filter((s:any)=>s.enabled).map((s:any)=>s.host.replace(/^www\./,'')));
- const queries=makeQueries(settings.facebookPages).map((q:any)=>({...q,domains:q.domains.filter((d:string)=>d==='facebook.com'||selected.has(d))})).filter((q:any)=>q.domains.length);
+ const queries=selectSearchQueries(makeQueries(settings.facebookPages,Math.floor(now/300000)),selected);
+ const knownDomains=new Set((await getSources()).map((s:any)=>s.host.replace(/^www\./,'')));
+ const acceptURL=(url:string)=>{try{const h=new URL(url).hostname.replace(/^www\./,'');return !knownDomains.has(h)||selected.has(h)}catch{return false}};
  const rotation=Math.floor(now/300000);const seeds=collectionSeeds(rotation).filter(s=>selected.has(new URL(s.url).hostname.replace(/^www\./,'')));
- const found=await discoverPortalListings({queries,seeds,key:key?.value||process.env.TAVILY_API_KEY||''});
+ const found=await discoverPortalListings({queries,seeds,key:key?.value||process.env.TAVILY_API_KEY||'',acceptURL});
  const knownURLs=new Set(settings.discoveries.map((x:any)=>x.url));const perSource=new Map<string,any>();
  for(const item of found.stats as any[])perSource.set(item.source,{...item,accepted:0,ready:0,rejected:0});
  const eligible:any[]=[];let filteredOut=0;
