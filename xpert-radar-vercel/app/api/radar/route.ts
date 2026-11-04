@@ -1,0 +1,8 @@
+import {guard} from '../../../lib/session.mjs';
+export const runtime='nodejs';
+export const maxDuration=300;
+import {state,upsert,update,scan,saveSources,fetchLeadPhone} from '../../../lib/radar';
+import {scanAll} from '../../../lib/internet';
+export const dynamic='force-dynamic';
+export async function GET(req:Request){const denied=guard(req);if(denied)return denied;try{return Response.json(await state(),{headers:{'Cache-Control':'no-store'}})}catch(e:any){return Response.json({error:e.message},{status:500})}}
+export async function POST(req:Request){const denied=guard(req);if(denied)return denied;try{if(Number(req.headers.get('content-length'))>1500000)throw Error('Datoteka je prevelika.');const body:any=await req.json();switch(body.action){case 'phone':return Response.json(await fetchLeadPhone(String(body.id||'')));case 'add':return Response.json(await upsert(body.lead,true));case 'update':return Response.json(await update(body.lead));case 'scan':return Response.json(await scanAll(!!body.force));case 'sources':await saveSources(body.sources);return Response.json({ok:true});case 'import':{if(!Array.isArray(body.leads)||body.leads.length>500)throw Error('Uvezite najviše 500 oglasa odjednom.');const result={added:0,duplicates:0,errors:[] as string[]};for(let i=0;i<body.leads.length;i++){try{const r=await upsert(body.leads[i],true);r.added?result.added++:result.duplicates++}catch(e:any){result.errors.push('Red '+(i+1)+': '+e.message)}}return Response.json(result)}default:throw Error('Nepoznata operacija.')}}catch(e:any){return Response.json({error:e.message||'Greška pri obradi.'},{status:400})}}
