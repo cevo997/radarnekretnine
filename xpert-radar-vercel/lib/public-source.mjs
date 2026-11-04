@@ -1,28 +1,43 @@
-// Additional public sources are discovered by the search provider, never fetched
-// directly by our server. Existing portal parsers retain their stricter rules.
+// Only reviewed classifieds portals belong here. A matching word in an agency
+// or news article never grants that site's domain access to listing ingestion.
+export const additionalPortals=[
+ {domain:'kupujemprodajem.com',name:'KupujemProdajem'},
+ {domain:'mojtrg.rs',name:'Mojtrg'},
+ {domain:'imovina.net',name:'Imovina.net'},
+ {domain:'sasomange.rs',name:'Sasomange'}
+];
 export function publicDomain(value){
  try{const u=new URL(value),h=u.hostname.replace(/^www\./,'').toLowerCase();
-  if(u.protocol!=='https:'||u.username||u.password||u.port||h.length>60||!h.includes('.')||!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h)||/\.(local|internal|localhost|test|invalid|example)$/.test(h))return '';
-  if(/(^|\.)(facebook\.com|instagram\.com|youtube\.com|tiktok\.com|linkedin\.com|google\.com|bing\.com|example\.com|example\.org|example\.net)$/.test(h))return '';
-  return h;
+  if(u.protocol!=='https:'||u.username||u.password||u.port)return '';
+  return additionalPortals.some(s=>s.domain===h)?h:'';
  }catch{return ''}
 }
 export function genericListingURL(value){
- if(!publicDomain(value))return false;
- const u=new URL(value),p=decodeURIComponent(u.pathname).toLowerCase();
- if(/\/(blog|vesti|news|search|pretraga|kategorija|category|tag|login|kontakt|contact|agents?|agencije)(\/|$)/.test(p)||/\.(pdf|jpg|png|webp|zip)$/.test(p))return false;
- const parts=p.split('/').filter(Boolean),last=parts.at(-1)||'';
- return parts.length>=2&&parts.some(part=>/\d{4,}|[a-f\d]{16,}/.test(part))||last.length>=25&&/(prodaj|izdav|oglas|nekretnin)/.test(p)&&/(stan|kuc|plac|njiv|garaz|hal[ae]|magacin|lokal|poslov|vikend|sup[ae])/.test(p);
+ const domain=publicDomain(value);if(!domain)return false;
+ const p=decodeURIComponent(new URL(value).pathname).toLowerCase();
+ switch(domain){
+  case 'kupujemprodajem.com':return /^\/nekretnine-(?:prodaja|izdavanje)\/.+\/oglas\/\d+\/?$/.test(p);
+  case 'mojtrg.rs':return /^\/oglas\/[^/]+\/\d+\/?$/.test(p);
+  case 'sasomange.rs':return /^\/p\/\d{5,}\/[^/]+\/?$/.test(p)||/^\/nekretnine\/[^?#]*\d{5,}[^/]*\/?$/.test(p);
+  case 'imovina.net':return /^\/nekretnin[ae]\/[^?#]*\/(?:[a-z-]*\d{4,}[a-z\d-]*)(?:\.html)?\/?$/.test(p)&&!/^\/nekretnine\/.*\/l\d/i.test(p);
+  default:return false;
+ }
 }
 export function extraQueries(turn=0){
- const locations=['Novi Sad','Veternik Futog Rumenka','Petrovaradin Sremska Kamenica Bukovac','Kać Kisač Čenej Ledinci Rakovac'];
- const location=locations[((turn%locations.length)+locations.length)%locations.length];
- const owner='(vlasnik OR "privatno lice" OR "fizičko lice")';
- return [
-  {id:'internet-sve-prodaja',query:'"Novi Sad" prodaja (stan OR kuća OR plac OR njiva OR garaža OR šupa OR vikendica) '+owner,domains:[],openWeb:true,timeRange:'month'},
-  {id:'internet-okolina',query:location+' prodaja nekretnine '+owner,domains:[],openWeb:true,timeRange:'month'},
-  {id:'internet-poslovno',query:'"Novi Sad" (izdavanje OR zakup) (hala OR magacin OR "poslovni prostor") '+owner,domains:[],openWeb:true,timeRange:'month'},
-  {id:'internet-dodatni-portali',query:location+' prodaja nekretnine '+owner+' -site:4zida.rs -site:nekretnine.rs -site:halooglasi.com -site:nadjidom.com -site:oglasi.rs -site:facebook.com',domains:[],openWeb:true}
- ];
+ const nearby=['Veternik','Futog','Petrovaradin','Sremska Kamenica','Rumenka','Bukovac','Kać','Ledinci','Rakovac'];
+ const location=nearby[((turn%nearby.length)+nearby.length)%nearby.length];
+ const queries=additionalPortals.flatMap(s=>[
+  {id:s.domain,query:`site:${s.domain} "Novi Sad" prodaja nekretnine vlasnik privatno lice`,domains:[s.domain],targeted:true},
+  {id:s.domain,query:`site:${s.domain} "Novi Sad" izdavanje hala magacin poslovni prostor vlasnik`,domains:[s.domain],targeted:true}
+ ]);
+ const portal=additionalPortals[((turn%additionalPortals.length)+additionalPortals.length)%additionalPortals.length];
+ queries.push({id:portal.domain,query:`site:${portal.domain} "${location}" prodaja vlasnik nekretnine`,domains:[portal.domain],targeted:true});
+ return queries;
 }
-export function selectSearchQueries(queries,selected){return queries.map(q=>q.openWeb?q:{...q,domains:q.domains.filter(d=>d==='facebook.com'||selected.has(d))}).filter(q=>q.openWeb||q.domains.length)}
+export function selectSearchQueries(queries,selected){return queries.map(q=>q.targeted?q:{...q,domains:q.domains.filter(d=>d==='facebook.com'||selected.has(d))}).filter(q=>q.domains.length)}
+export const extraCollectionSeeds=[
+ {id:'kupujemprodajem.com',url:'https://www.kupujemprodajem.com/nekretnine-prodaja/stanovi/pretraga?categoryId=2821&groupId=2822&realEstateAdvertiserType=179&realEstateLocation=4605&so=1'},
+ {id:'mojtrg.rs',url:'https://www.mojtrg.rs/oglasi/nekretnine/stanovi-apartmani/novi-sad/q-prodaja-stana?Private=True'},
+ {id:'imovina.net',url:'https://imovina.net/nekretnine/novi-sad/stanovi/prodaja/1/l25-t39-c1-p1.html'}
+];
+export function portalRun(source){return ['internet','commercial-web','4zida','nekretnine','halo','oglasi','nadjidom','facebook',...additionalPortals.map(s=>s.domain)].some(id=>source===id||source===id+'-web')}
