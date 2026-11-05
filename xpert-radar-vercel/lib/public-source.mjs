@@ -40,4 +40,4 @@ export const extraCollectionSeeds=[
  {id:'mojtrg.rs',url:'https://www.mojtrg.rs/oglasi/nekretnine/stanovi-apartmani/novi-sad/q-prodaja-stana?Private=False'},
  {id:'imovina.net',url:'https://imovina.net/nekretnine/novi-sad/stanovi/prodaja/1/l25-t39-c1-p1.html'}
 ];
-export function portalRun(source){return ['internet','commercial-web','4zida','nekretnine','halo','oglasi','nadjidom','facebook',...additionalPortals.map(s=>s.domain)].some(id=>source===id||source===id+'-web')}
+export function portalRun(source){return ['internet','commercial-web','4zida','nekretnine','halo','oglasi','nadjidom','facebook',...additionalPortals.map(s=>s.domain)].some(id=>source===id||source===id+'-web'||source===id+'-worker')}

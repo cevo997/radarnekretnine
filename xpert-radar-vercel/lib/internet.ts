@@ -45,6 +45,7 @@ export async function runInternetSearch(force=false){const settings=await intern
 
 }
 export async function scanAll(force=false){
+ const {requestWorker}=await import('./worker');const workerRequest=await requestWorker();if(workerRequest)return workerRequest;
  const started=Date.now();await db().prepare('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)').bind('scan_all_lock','0').run();
  const lease=await db().prepare('UPDATE settings SET value=? WHERE key=? AND CAST(value AS INTEGER)<? RETURNING value').bind(String(started),'scan_all_lock',String(started-330000)).all();
  if(!lease.results.length)return {skipped:true,added:0,discovered:0,message:'Provera izvora je već pokrenuta na drugom računaru. Lista je osvežena.'};
@@ -60,6 +61,7 @@ export async function scanAll(force=false){
 export async function inspectPublicSource(source:string){const seed=collectionSeeds(0).find(s=>s.id===source);if(!seed)throw Error('Nepoznat izvor.');const key=await db().prepare('SELECT value FROM settings WHERE key=?').bind('tavily_api_key').first<{value:string}>();if(!key?.value&&!process.env.TAVILY_API_KEY)throw Error('Pretraživač nije povezan.');const r=await fetch('https://api.tavily.com/extract',{method:'POST',headers:{Authorization:'Bearer '+(key?.value||process.env.TAVILY_API_KEY),'Content-Type':'application/json'},body:JSON.stringify({urls:[seed.url],extract_depth:'advanced',format:'markdown',timeout:20}),signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error('Servis je vratio HTTP '+r.status);const j:any=await r.json();return{source,results:(j.results||[]).map((x:any)=>({url:x.url,raw_content:String(x.raw_content||'').slice(0,100000)})),failed:j.failed_results||[]}}
 
 export async function importPublicURL(value:string){
+ const {queueWorkerURL}=await import('./worker');const queued=await queueWorkerURL(value);if(queued)return queued;
  const url=canonicalDiscoveryURL(value);if(!listingSource(url)||!isListingURL(url))throw Error('Unesite link pojedinačnog oglasa sa podržanog oglasnika.');
  const settings=await internetState();if(!settings.configured)throw Error('Prvo povežite Tavily ključ u podešavanjima.');
  const key=await db().prepare('SELECT value FROM settings WHERE key=?').bind('tavily_api_key').first<{value:string}>();
