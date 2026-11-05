@@ -81,6 +81,27 @@ Vercel zatim automatski gradi novu verziju povezanog repozitorijuma. Fajl sa pre
 
 ## Šta je provereno
 
-Produkcijska Next.js izgradnja i testovi parsiranja, redosleda, vlasnika, obuhvata, stranica i sesija. HTTP provera prijave, odbijanja neprijavljenih zahteva, uvoza rezervne kopije, očuvanja beleški i zabrane ponovnog uvoza u popunjenu bazu koristi lokalnu libSQL bazu. Objavljivanje na vaš Vercel nalog i povezivanje stvarne udaljene baze obavljate kroz korake iznad.
+U ovoj verziji proverena je produkcijska Next.js izgradnja. Automatski testovi nisu pokretani, po zahtevu korisnika. Rezultati ranijih čitanja javnih oglasa navedeni su ispod. Objavljivanje na vaš Vercel nalog i povezivanje stvarne udaljene baze obavljate kroz korake iznad.
 
 Ako Vercel traži svoju prijavu pre nego što prikaže aplikaciju, proverite Project → Settings → Deployment Protection za produkcijski domen. Pristup podacima aplikacije štite korisničko ime i lozinka postavljeni iznad. Promene na staroj ChatGPT verziji posle izvoza nisu automatski sinhronizovane sa novom bazom; rezervna kopija predstavlja presek u trenutku izvoza.
+
+## Obrada svih izvora
+
+Svaki uključeni oglasnik sada ima pokušaj direktnog čitanja dostupnih javnih stranica i dopunsku proveru preko Tavily. Oglasi.rs i Nekretnine.rs zadržavaju posebne parsere; ostali koriste ograničeno čitanje linkova i proveru detalja. Direktno čitanje može biti blokirano ili nedostupno u produkcijskoj mreži — nova implementacija ne ukida zabrane portala. HTTP 403/429 izaziva pauzu direktnog pristupa na šest sati; internet provera ostaje aktivna.
+
+- KP: vlasničke kartice, cene i površine, relativni datumi i rotacija narednih stranica.
+- 4zida: vlasničke kartice, različite kategorije prodaje i rotacija narednih stranica.
+- Halo: kartice sa zasebnom cenom, datumom i vlasnikom; pokušaj naredne stranice uz otkrivanje ponovljenih rezultata.
+- Nekretnine.rs: pojedinačni detalji sa oznakom Privatno lice i praćenje uočenih `pag` linkova. Direktan pristup se može odbiti.
+- NadjiDom: direktne javne liste i detalji kada su dostupni, podrška `page` linkovima i odbacivanje jasno agencijskih kartica pre otvaranja detalja.
+- Mojtrg: oba dostupna prikaza liste; privatni oglašivač se potvrđuje u pojedinačnom oglasu. Javno prikazani telefoni mogu se preuzeti.
+- Imovina.net: direktne javne liste/detalji i ciljana internet pretraga; oglasi agencija ne postaju vlasnički kontakti.
+- Facebook: isključivo izabrane javne stranice za Novi Sad; dve stranice za čitanje rotiraju se kroz odabrane, uz upite za sve odabrane. Grupe, Marketplace i privatni profili ostaju isključeni.
+
+Neobrađeni linkovi čuvaju se u tabeli `crawl_frontier`. Obrada se raspoređuje po izvorima, pa se nastavlja sledećim pokretanjem. Detalji uspešno pročitanih linkova proveravaju se ponovo najranije posle 24 sata, a nedostupnih posle 30 minuta. Sveže javne kartice i dalje se čitaju u svakom prolazu. Broj zahteva i trajanje su ograničeni zbog vremenskog ograničenja Vercel funkcije i kvote servisa.
+
+Oglas ulazi u vlasničke kontakte samo posle čitanja detalja ili jasno označene javne kartice. Rezultat internet pretrage sam po sebi ostaje za proveru. Nedostajući datum se ne izmišlja. Ako detalj ne vrati cenu, ranija cena se čuva uz oznaku da je poslednja poznata. Izričito odbijanje saradnje sa agencijama označava kontakt kao Ne želi saradnju. Statusi i beleške se čuvaju.
+
+Unos pojedinačnog linka i preuzimanje javnog telefona dostupni su za sve podržane portale. Nema otključavanja skrivenih brojeva. Pozadinski rad zahteva posebno povezan serverski raspored; cron endpoint sam po sebi nije aktivan raspored.
+
+Automatski testovi nisu pokretani, po zahtevu korisnika. Produkcijska izgradnja prolazi. Stvarni prolazi: 4zida 57 prihvaćenih vlasničkih oglasa, Halo 21, Nekretnine.rs 1, Mojtrg 3; raniji KP prolaz 87. To su rezultati odvojenih čitanja, ne broj novih upisa u korisnikovu bazu. Uzorci NadjiDom i Imovina sadržali su agencijske oglase i odbačeni su; potpuna pokrivenost svih portala nije zagarantovana. Kod se još mora objaviti u korisnikovom Vercel projektu.

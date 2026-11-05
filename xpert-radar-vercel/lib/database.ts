@@ -2,6 +2,8 @@ import {createClient,type Client,type InValue} from '@libsql/client/web';
 let client:Client|undefined;
 let ready:Promise<unknown>|undefined;
 const schema=[
+ 'CREATE TABLE IF NOT EXISTS crawl_frontier(url TEXT PRIMARY KEY,source TEXT NOT NULL,payload TEXT NOT NULL,discovered INTEGER NOT NULL,last_attempt INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0)',
+ 'CREATE INDEX IF NOT EXISTS crawl_frontier_due ON crawl_frontier(next_attempt,source)',
  'CREATE TABLE IF NOT EXISTS leads(id TEXT PRIMARY KEY,payload TEXT NOT NULL,phone TEXT NOT NULL DEFAULT \'\',created TEXT NOT NULL,updated TEXT NOT NULL,canonical_url TEXT)',
  'CREATE UNIQUE INDEX IF NOT EXISTS leads_canonical_url_unique ON leads(canonical_url)',
  'CREATE INDEX IF NOT EXISTS leads_phone ON leads(phone)',

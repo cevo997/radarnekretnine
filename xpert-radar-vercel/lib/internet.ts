@@ -1,17 +1,17 @@
 import {selectSearchQueries,extraCollectionSeeds} from './public-source.mjs';
 import {byPublicationDesc} from './publication-order.mjs';
-import {getDB} from './database';
+import {getDB,databaseClient} from './database';
 import {classifyDiscovery,makeQueries,facebookPage,canonicalDiscoveryURL} from './discovery.mjs';
-import {discoverPortalListings,collectionSeeds,listingSource,selectListings} from './portal-discovery.mjs';
+import {discoverPortalListings,collectionSeeds,listingSource,selectListings,isListingURL,listingDocument} from './portal-discovery.mjs';
 import {upsert,scan,getSources} from './radar';
 const db=()=>getDB();
 export async function internetState(){const [options,key,items]=await Promise.all([db().prepare('SELECT value FROM settings WHERE key=?').bind('internet_options').first<{value:string}>(),db().prepare('SELECT value FROM settings WHERE key=?').bind('tavily_api_key').first<{value:string}>(),db().prepare('SELECT payload FROM discoveries ORDER BY updated DESC LIMIT 500').all()]);const opts=options?JSON.parse(options.value):{enabled:false,facebookPages:[]};return {...opts,configured:!!(key?.value||process.env.TAVILY_API_KEY),discoveries:items.results.map((x:any)=>JSON.parse(x.payload)).filter((x:any)=>listingSource(x.url)).sort(byPublicationDesc),queries:makeQueries(opts.facebookPages||[]),note:'Javne indeksirane objave; ažurnost zavisi od pretraživača. Facebook: samo izabrane javne stranice za Novi Sad.'}}
 export async function configureInternet(body:any){if((body.facebookPages||[]).length&&!body.facebookPagesConfirmed)throw Error('Potvrdite da su izabrane javne stranice za Novi Sad.');const pages=[...new Set((body.facebookPages||[]).map((x:string)=>facebookPage(x)))].slice(0,5);if(body.enabled&&!(body.apiKey||await db().prepare('SELECT value FROM settings WHERE key=?').bind('tavily_api_key').first()||process.env.TAVILY_API_KEY))throw Error('Za samostalnu pretragu prvo povežite Tavily ključ.');if(body.apiKey){const key=String(body.apiKey).trim();if(!/^tvly-[A-Za-z0-9_-]{10,250}$/.test(key))throw Error('Ključ nema očekivani Tavily format.');await db().prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('tavily_api_key',key).run()}if(body.removeKey)await db().prepare('DELETE FROM settings WHERE key=?').bind('tavily_api_key').run();await db().prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('internet_options',JSON.stringify({enabled:body.removeKey?false:!!body.enabled,facebookPages:pages})).run();return {ok:true}}
 async function log(status:string,message:string,added:number){await db().prepare('INSERT INTO runs(id,source,at,status,message,added) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),'internet',new Date().toISOString(),status,message,added).run()}
 export async function ingestDiscoveries(rows:any[],provider='ChatGPT internet pretraga'){
- if(!Array.isArray(rows)||rows.length>100)throw Error('Najviše 100 rezultata po uvozu.');const opts=await internetState();const result={added:0,contacts:0,updated:0,rejected:0,errors:[] as string[]};
+ if(!Array.isArray(rows)||rows.length>100)throw Error('Najviše 100 rezultata po uvozu.');const opts=await internetState();const existingLeads=(await db().prepare('SELECT payload FROM leads').all()).results.map((r:any)=>JSON.parse(r.payload));const result={added:0,contacts:0,updated:0,rejected:0,errors:[] as string[]};
  for(let i=0;i<rows.length;i++){try{const x=classifyDiscovery(rows[i],opts.facebookPages);const now=new Date().toISOString();const old=await db().prepare('SELECT payload FROM discoveries WHERE url=?').bind(x.url).first<{payload:string}>();const prior=old?JSON.parse(old.payload):null;const next={...prior,...x,id:prior?.id||crypto.randomUUID(),created:prior?.created||now,updated:now,provider,state:prior?.state||'Za proveru'};
- if(x.ready&&next.state!=='Ignorisano'){const r=await upsert({...x,description:x.content});if(r.added)result.contacts++;next.state='U kontaktima'}
+ if(x.ready&&next.state!=='Ignorisano'){const r=await upsert({...x,description:x.content},false,existingLeads);if(r.added)result.contacts++;next.state='U kontaktima'}
  await db().prepare('INSERT INTO discoveries(id,url,payload,created,updated) VALUES(?,?,?,?,?) ON CONFLICT(url) DO UPDATE SET payload=excluded.payload,updated=excluded.updated').bind(next.id,next.url,JSON.stringify(next),next.created,next.updated).run();prior?result.updated++:result.added++;
  }catch(e:any){result.rejected++;result.errors.push('Rezultat '+(i+1)+': '+e.message)}}await log(result.rejected?'partial':'ok',`${provider}: ${result.added} novih rezultata, ${result.contacts} novih kontakata, ${result.updated} postojećih; ${result.rejected} odbačeno.`,result.contacts);return result
 }
@@ -21,28 +21,53 @@ export async function runInternetSearch(force=false){const settings=await intern
  const selected=new Set((await getSources()).filter((s:any)=>s.enabled).map((s:any)=>s.host.replace(/^www\./,'')));
  const queries=selectSearchQueries(makeQueries(settings.facebookPages,Math.floor(now/300000)),selected);
  const knownDomains=new Set((await getSources()).map((s:any)=>s.host.replace(/^www\./,'')));
- const acceptURL=(url:string)=>{try{const h=new URL(url).hostname.replace(/^www\./,'');return !knownDomains.has(h)||selected.has(h)}catch{return false}};
- const rotation=Math.floor(now/300000);const seeds=[...collectionSeeds(rotation).filter(s=>selected.has(new URL(s.url).hostname.replace(/^www\./,''))),...extraCollectionSeeds];
- const found=await discoverPortalListings({queries,seeds,key:key?.value||process.env.TAVILY_API_KEY||'',acceptURL});
- const knownURLs=new Set(settings.discoveries.map((x:any)=>x.url));const perSource=new Map<string,any>();
+ const acceptURL=(url:string)=>{try{const h=new URL(url).hostname.replace(/^www\./,'');if(h==='facebook.com')return settings.facebookPages.some((p:string)=>url===p||url.startsWith(p+'/'));return !knownDomains.has(h)||selected.has(h)}catch{return false}};
+ const rotation=Math.floor(now/300000);const seeds=[...collectionSeeds(rotation).filter(s=>selected.has(new URL(s.url).hostname.replace(/^www\./,''))),...extraCollectionSeeds.filter(s=>selected.has(new URL(s.url).hostname.replace(/^www\./,''))),...[...new Set(settings.facebookPages.length?[settings.facebookPages[rotation%settings.facebookPages.length],settings.facebookPages[(rotation+1)%settings.facebookPages.length]]:[])].map((url:any)=>({id:'facebook',url}))];
+ const leadRows=await db().prepare('SELECT payload FROM leads').all();
+ const knownURLs=new Set<string>([...settings.discoveries.map((x:any)=>x.url),...leadRows.results.flatMap((r:any)=>{const x=JSON.parse(r.payload);return x.urls||[x.url]}).filter(Boolean)]);
+ const queued=await db().prepare('SELECT payload,last_attempt,next_attempt FROM crawl_frontier ORDER BY last_attempt ASC LIMIT 3000').all();
+ const priorLinks=queued.results.map((r:any)=>({...JSON.parse(r.payload),lastAttempt:r.last_attempt,nextAttempt:r.next_attempt})).filter((x:any)=>acceptURL(x.url));
+ const found=await discoverPortalListings({queries,seeds,key:key?.value||process.env.TAVILY_API_KEY||'',acceptURL,knownURLs,rotation,priorLinks});
+ const client=await databaseClient();
+ const pendingWrites=found.links.filter((x:any)=>!x.cached).slice(0,700).map((x:any)=>({sql:'INSERT INTO crawl_frontier(url,source,payload,discovered) VALUES(?,?,?,?) ON CONFLICT(url) DO UPDATE SET payload=excluded.payload',args:[x.url,x.source,JSON.stringify(x),now]}));
+ for(let n=0;n<pendingWrites.length;n+=100)await client.batch(pendingWrites.slice(n,n+100),'write');
+ const attemptWrites=found.attempted.map((x:any)=>({sql:'UPDATE crawl_frontier SET last_attempt=?,next_attempt=?,attempts=attempts+1 WHERE url=?',args:[now,now+(x.ok?86400000:1800000),x.url]}));
+ for(let n=0;n<attemptWrites.length;n+=100)await client.batch(attemptWrites.slice(n,n+100),'write');const perSource=new Map<string,any>();
  for(const item of found.stats as any[])perSource.set(item.source,{...item,accepted:0,ready:0,rejected:0});
  const eligible:any[]=[];let filteredOut=0;
  for(const row of found.rows){const id=listingSource(row.url);const stats=perSource.get(id)||{source:id,accepted:0,ready:0,rejected:0};perSource.set(id,stats);try{classifyDiscovery(row,settings.facebookPages);eligible.push(row)}catch{stats.rejected++;filteredOut++}}
  const rows=selectListings(eligible,100,knownURLs);
  for(const row of rows){const stats=perSource.get(listingSource(row.url));const x=classifyDiscovery(row,settings.facebookPages);stats.accepted++;if(x.ready)stats.ready++}
- for(const stats of perSource.values()){const status=stats.accepted?'ok':stats.failures?'error':'partial';const message=`Internet: ${stats.searchResults||0} rezultata pretrage, ${stats.collections||0} javnih lista (${stats.collectionPages||0} narednih stranica), ${stats.links||0} linkova; otvoreno ${stats.verifiedPages||0} pojedinačnih oglasa. Prihvaćeno ${stats.accepted}, vlasničkih ${stats.ready}, odbačeno ${stats.rejected}.`;
+ for(const stats of perSource.values()){const status=stats.accepted?(stats.failures?'partial':'ok'):stats.failures?'error':'partial';const sourceFailures=found.failures.filter((f:string)=>f.startsWith(stats.source+':')).slice(0,2).join(' ');const message=`Internet: ${stats.searchResults||0} rezultata pretrage, ${stats.collections||0} javnih lista (${stats.collectionPages||0} narednih stranica), ${stats.links||0} linkova; otvoreno ${stats.verifiedPages||0} pojedinačnih oglasa. Prihvaćeno ${stats.accepted}, vlasničkih ${stats.ready}, odbačeno ${stats.rejected}. Prepoznatih agencijskih kartica ${stats.filteredAgencies||0}; ponovljenih stranica ${stats.repeatedPages||0}.`+(sourceFailures?' '+sourceFailures:'');
  await db().prepare('INSERT INTO runs(id,source,at,status,message,added) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),stats.source+'-web',new Date().toISOString(),status,message,0).run()}
  if(!rows.length&&found.failures.length){await log('error',found.failures.join(' '),0);throw Error(found.failures.join(' '))}
- const result=await ingestDiscoveries(rows,`Internet pretraga i provera pojedinačnih oglasa (${filteredOut} odbačeno pre čuvanja)`);return{...result,rejected:result.rejected+filteredOut,remaining:Math.max(0,eligible.length-rows.length),sources:[...perSource.values()],failures:found.failures,facebook:settings.facebookPages.length?'Samo izabrane javne stranice za Novi Sad.':'Facebook nije aktivan: nije izabrana javna stranica za Novi Sad.'}
+ const result=await ingestDiscoveries(rows,`Internet pretraga i provera pojedinačnih oglasa (${filteredOut} odbačeno pre čuvanja)`);return{...result,rejected:result.rejected+filteredOut,remaining:Math.max(0,eligible.length-rows.length),sources:[...perSource.values()],pendingLinks:found.pending,budgetLimited:found.budgetLimited,failures:found.failures,facebook:settings.facebookPages.length?'Samo izabrane javne stranice za Novi Sad.':'Facebook nije aktivan: nije izabrana javna stranica za Novi Sad.'}
 
 }
 export async function scanAll(force=false){
- const [a,b]=await Promise.allSettled([scan(force),runInternetSearch(force)]);
+ const started=Date.now();await db().prepare('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)').bind('scan_all_lock','0').run();
+ const lease=await db().prepare('UPDATE settings SET value=? WHERE key=? AND CAST(value AS INTEGER)<? RETURNING value').bind(String(started),'scan_all_lock',String(started-330000)).all();
+ if(!lease.results.length)return {skipped:true,added:0,discovered:0,message:'Provera izvora je već pokrenuta na drugom računaru. Lista je osvežena.'};
+ try{const [a,b]=await Promise.allSettled([scan(force),runInternetSearch(force)]);
  const direct:any=a.status==='fulfilled'?a.value:{error:'Direktna provera trenutno nije dostupna.'};
  const internet:any=b.status==='fulfilled'?b.value:{error:b.reason?.message||'Internet provera trenutno nije dostupna.'};
  const added=(direct.added||0)+(internet.contacts||0);const discovered=internet.added||0;
  return{...direct,added,internet,discovered,skipped:!!direct.skipped&&!!internet.skipped,message:direct.skipped&&internet.skipped?'Izvori su skoro provereni. Lista je osvežena.':`Dodato ${added} kontakata i ${discovered} rezultata za proveru.`}
+ }finally{await db().prepare('UPDATE settings SET value=? WHERE key=? AND value=?').bind('0','scan_all_lock',String(started)).run()}
 }
 
 // Owner-private diagnostic for a fixed public source, never returns the stored key.
 export async function inspectPublicSource(source:string){const seed=collectionSeeds(0).find(s=>s.id===source);if(!seed)throw Error('Nepoznat izvor.');const key=await db().prepare('SELECT value FROM settings WHERE key=?').bind('tavily_api_key').first<{value:string}>();if(!key?.value&&!process.env.TAVILY_API_KEY)throw Error('Pretraživač nije povezan.');const r=await fetch('https://api.tavily.com/extract',{method:'POST',headers:{Authorization:'Bearer '+(key?.value||process.env.TAVILY_API_KEY),'Content-Type':'application/json'},body:JSON.stringify({urls:[seed.url],extract_depth:'advanced',format:'markdown',timeout:20}),signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error('Servis je vratio HTTP '+r.status);const j:any=await r.json();return{source,results:(j.results||[]).map((x:any)=>({url:x.url,raw_content:String(x.raw_content||'').slice(0,100000)})),failed:j.failed_results||[]}}
+
+export async function importPublicURL(value:string){
+ const url=canonicalDiscoveryURL(value);if(!listingSource(url)||!isListingURL(url))throw Error('Unesite link pojedinačnog oglasa sa podržanog oglasnika.');
+ const settings=await internetState();if(!settings.configured)throw Error('Prvo povežite Tavily ključ u podešavanjima.');
+ const key=await db().prepare('SELECT value FROM settings WHERE key=?').bind('tavily_api_key').first<{value:string}>();
+ const r=await fetch('https://api.tavily.com/extract',{method:'POST',headers:{Authorization:'Bearer '+(key?.value||process.env.TAVILY_API_KEY),'Content-Type':'application/json'},body:JSON.stringify({urls:[url],extract_depth:'advanced',format:'markdown',timeout:20}),signal:AbortSignal.timeout(30000)});
+ if(!r.ok)throw Error(r.status===401?'Tavily ključ nije prihvaćen. Zamenite ga u podešavanjima.':'Servis nije otvorio oglas (HTTP '+r.status+').');
+ const j:any=await r.json();const item=(j.results||[]).find((x:any)=>canonicalDiscoveryURL(x.url)===url);if(!item)throw Error('Oglas nije dostupan za automatsko čitanje. Otvorite ga na izvornom portalu.');
+ const document=listingDocument(item.raw_content,'Oglas · '+listingSource(url));if(!document)throw Error('Oglas je neaktivan ili portal nije vratio podatke oglasa.');
+ const tel=String(item.raw_content||'').match(/\]\(tel:([+\d ()-]+)\)/)?.[1]||'';
+ const row={url,...document,phone:tel,published:item.published_date||'',verified:true};classifyDiscovery(row,settings.facebookPages);
+ const result=await ingestDiscoveries([row],'Provera dodatog linka');if(result.rejected)throw Error(result.errors[0]||'Oglas nije u dogovorenom obuhvatu.');return result;
+}

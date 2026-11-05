@@ -1,4 +1,5 @@
-import {publicDomain,extraQueries} from './public-source.mjs';
+import {sourceDate,agencyEvidence} from './portal-readers.mjs';
+import {publicDomain,extraQueries,additionalPortals} from './public-source.mjs';
 import {isListingURL} from './portal-discovery.mjs';
 import {publicationTimestamp} from './publication-order.mjs';
 import {normalize,inferType,surfaceNumber,allowedScope,clean,sourceDefs} from './rules.mjs';
@@ -20,28 +21,28 @@ export function classifyDiscovery(row,facebookPages=[]){
  }else if(!detail)throw Error('Rezultat je pretraga ili zbirna stranica, a ne pojedinačni oglas.');
  if(/\b(?:otkup|kupujem|potrazujem|trazim)\b/.test(normalize(title)))throw Error('Oglas je potražnja ili otkup, a ne ponuda nekretnine.');
  if(/\bistekao\b|oglas (vise )?nije aktivan|nekretnina je prodata|\bprodato\b/.test(text))throw Error('Oglas je istekao ili je označen kao prodat.');
- const agency=/agencijska provizija|agencijski (id|broj|sifra)|reg(?:istar|\.)\s*(?:br|posr)|registar posrednika|nasi agenti|nase agente|agencija za nekretnine|posrednicka (naknada|provizija)|ugovor o posredovanju|agencijske ponude|agencijsku proviziju|registru posrednika|oglas oglasava agencija|oglasivac\s*[:–-]?\s*agencija/.test(text);
- if(agency)throw Error('Prepoznat je agencijski oglas.');
- if(!knownSource&&(!row.verified||!/(?:m²|m2|m\^2|€|EUR)/i.test(text)))throw Error('Dodatni izvor zahteva otvoren pojedinačni oglas i konkretne podatke.');
+ const agency=/agencijska provizija|agencijski (id|broj|sifra)|reg(?:istar|\.)\s*(?:br(?:oj)?\.?|posr)\s*[:.]*\s*\d+|registar posrednika|nasi agenti|nase agente|agencija za nekretnine|posrednicka (naknada|provizija)|ugovor o posredovanju|agencijske ponude|agencijsku proviziju|registru posrednika|oglas oglasava agencija|oglasivac\s*[:–-]?\s*agencija/.test(text);
+ if(agency||agencyEvidence(text))throw Error('Prepoznat je agencijski oglas.');
+ if(additionalPortals.some(s=>s.domain===source.id)&&(!(row.verified||row.cardVerified)||!/(?:m²|m2|m\^2|€|EUR)/i.test(text)))throw Error('Dodatni izvor zahteva otvoren pojedinačni oglas i konkretne podatke.');
  const dealIn=value=>{const n=normalize(value);const rent=/izdavan|izdaje[m]?|iznajm|\brent\b|zakup/.test(n),sale=/prodaj|\bsale\b/.test(n);return rent&&!sale?'Izdavanje':sale&&!rent?'Prodaja':''};const deal=knownSource?(dealIn(path)||dealIn(title)||dealIn(content)):(dealIn(title)||dealIn(path)||dealIn(content));
- const fromPath=inferType(path);const fromTitle=inferType(title);const type=!knownSource&&fromTitle!=='Ostalo'?fromTitle:fromPath!=='Ostalo'?fromPath:fromTitle;const area=surfaceNumber(content.match(/([\d.,]+)\s*(?:m²|m2|m\^\{?2\}?)\s*Kvadratura/i)?.[1]||(title+' '+content).match(/([\d.,]+)\s*(?:m²|m2|m\^\{?2\}?)/i)?.[1]);const priceText=(title+' '+content).match(/(?:(\d[\d.,]*(?: \d{3})*)\s*(?:€|EUR)(?!\s*\/)|(?:€|EUR)\s*(\d[\d.,]*(?: \d{3})*))/i);const priceValue=priceText?.[1]||priceText?.[2]||'';
+ const fromPath=inferType(path);const fromTitle=inferType(title);const type=source.id==='kupujemprodajem.com'&&fromPath!=='Ostalo'?fromPath:!knownSource&&fromTitle!=='Ostalo'?fromTitle:fromPath!=='Ostalo'?fromPath:fromTitle;const area=surfaceNumber(content.match(/([\d.,]+)\s*(?:m²|m2|m\^\{?2\}?)\s*Kvadratura/i)?.[1]||(title+' '+content).match(/([\d.,]+)\s*(?:m²|m2|m\^\{?2\}?)/i)?.[1]);const priceText=(title+' '+content).match(/(?:(\d[\d.,]*(?: \d{3})*)\s*(?:€|EUR)(?!\s*\/)|(?:€|EUR)\s*(\d[\d.,]*(?: \d{3})*))/i);const priceValue=priceText?.[1]||priceText?.[2]||'';
  const price=priceValue?Number(priceValue.replace(/[.\s]/g,'').replace(',','.'))||0:0;
  const nearby=(text+' '+normalize(path).replace(/[-+]/g,' ')).match(/\b(petrovaradin|sremska kamenica|veternik|futog|rumenka|bukovac|ledinci|rakovac|beocin|kac|budisava|kisac|cerevic|bocke|stepanovicevo|cenej|kovilj|begec)\b/)?.[1];const location=/\bnovi sad\b/.test(text)||/novi[-+ ]sad/.test(normalize(path))?'Novi Sad':String(row.location||nearby||'');if(!location)throw Error('Oglas ne potvrđuje lokaciju Novi Sad ili okolinu.');
  const ownerLabel=normalize(row.ownerLabel);const marked=['vlasnik','privatno lice'].includes(ownerLabel)||/direktno od vlasnika|(?:stan|kucu|nekretninu) oglasava vlasnik|privatno lice|fizicko lice|oglasivac\s*[:–-]?\s*vlasnik|oglas oglasava vlasnik|postavio vlasnik/.test(text)||source.id==='4zida'&&/kupovina direktno od vlasnika/.test(text)||/^(?:\*\*)?Vlasnik(?:\*\*)?\s*$/im.test(String(row.content||''));
- if(!knownSource&&!marked)throw Error('Dodatni izvor ne potvrđuje privatnog oglašivača.');
+ if(additionalPortals.some(s=>s.domain===source.id)&&!marked)throw Error('Dodatni izvor ne potvrđuje privatnog oglašivača.');
  const phone=String(row.phone||'').replace(/[^+\d ()/-]/g,'').slice(0,35);
  if(deal==='Izdavanje'&&((area>0&&area<150)||!['Poslovni prostor','Hala','Magacin','Ostalo'].includes(type)))throw Error('Izdavanje je izvan dogovorenog obuhvata.');
  if(location&&deal&&type!=='Ostalo'&&!allowedScope({location,deal,type,area})&&!(deal==='Izdavanje'&&!area))throw Error('Oglas je van dogovorenog obuhvata.');
- const investor=/\binvestitor\b|kompanija|stanove razlicitih struktura/.test(text);
- const sourceDate=String(content.match(/(?:objavljen[oa]?|a[zž]uriran[oa]?|obnovljen[oa]?|datum objave|datum a[zž]uriranja)\s*[:*]*\s*(\d{1,2}[./]\d{1,2}[./]\d{4})/i)?.[1]||row.published||'');const publishedAt=publicationTimestamp(sourceDate);const oldListing=Number.isFinite(publishedAt)&&Date.now()-publishedAt>45*86400000;
- const ready=source.id!=='facebook'&&!investor&&!oldListing&&marked&&!!deal&&!!location&&type!=='Ostalo'&&(deal==='Prodaja'||area>=150)&&allowedScope({location,deal,type,area});
- return{url,source:source.id,title,description:content,content,deal,type,area,price,location,owner:ready?'Označen vlasnik':'Za proveru',ownerName:String(row.ownerName||'').slice(0,100),phone,published:sourceDate.slice(0,80),foundBy:row.cardVerified?'Javna lista portala':'Internet pretraga',evidence:oldListing?'Izvor navodi datum stariji od 45 dana; proveriti aktuelnost i oglašivača.':row.cardVerified?'Javna kartica pojedinačnog oglasa: portal označava vlasnika. Vlasništvo nije nezavisno potvrđeno.':source.id==='facebook'?'Javna objava sa izabrane stranice za Novi Sad. Autor i vlasništvo zahtevaju proveru.':marked?'U indeksiranom sadržaju označen privatni oglašivač. Aktuelnost proveriti na izvornom oglasu.':'Rezultat internet pretrage; vlasnik i podaci još nisu potvrđeni.',ready};
+ const investor=/oglasivac\s*[:–-]?\s*investitor|investitor (?:prodaje|nudi)|kompanija|stanove razlicitih struktura/.test(text)||/^\s*Investitor\s*$/im.test(String(row.content||''));
+ const publishedSource=String(sourceDate(content)||row.published||'');const publishedAt=publicationTimestamp(publishedSource);const oldListing=Number.isFinite(publishedAt)&&Date.now()-publishedAt>45*86400000;
+ const ready=!!(row.verified||row.cardVerified)&&source.id!=='facebook'&&!investor&&!oldListing&&marked&&!!deal&&!!location&&type!=='Ostalo'&&(deal==='Prodaja'||area>=150)&&allowedScope({location,deal,type,area});
+ return{url,source:source.id,title,description:content,content,deal,type,area,price,location,owner:ready?'Označen vlasnik':'Za proveru',ownerName:String(row.ownerName||'').slice(0,100),phone,published:publishedSource.slice(0,80),foundBy:row.cardVerified?'Javna lista portala':'Internet pretraga',evidence:oldListing?'Izvor navodi datum stariji od 45 dana; proveriti aktuelnost i oglašivača.':row.cardVerified?'Javna kartica pojedinačnog oglasa: portal označava vlasnika. Vlasništvo nije nezavisno potvrđeno.':source.id==='facebook'?'Javna objava sa izabrane stranice za Novi Sad. Autor i vlasništvo zahtevaju proveru.':marked?'U indeksiranom sadržaju označen privatni oglašivač. Aktuelnost proveriti na izvornom oglasu.':'Rezultat internet pretrage; vlasnik i podaci još nisu potvrđeni.',ready};
 }
-export function makeQueries(pages=[],turn=0){const property='(stan OR kuća OR plac OR njiva OR garaža OR šupa OR hala OR magacin OR lokal)';return [
- {id:'4zida',query:'site:4zida.rs "Novi Sad" "Kupovina direktno od vlasnika" prodaja '+property,domains:['4zida.rs']},
- {id:'nekretnine',query:'site:nekretnine.rs/oglasi/ "Novi Sad" "Privatno lice" prodaja',domains:['nekretnine.rs']},
- {id:'halo',query:'site:halooglasi.com/nekretnine/prodaja- "Novi Sad" "Vlasnik" prodaja',domains:['halooglasi.com']},
- {id:'nadjidom',query:'site:nadjidom.com/sr/details/ "Novi Sad" "vlasnik" prodaja',domains:['nadjidom.com']},
- {id:'commercial',query:'"Novi Sad" (izdavanje OR zakup) (hala OR magacin OR "poslovni prostor") (vlasnik OR "privatno lice")',domains:['4zida.rs','nekretnine.rs','halooglasi.com','nadjidom.com','oglasi.rs']},
+export function makeQueries(pages=[],turn=0){
+ const portals=[{id:'4zida',domain:'4zida.rs',owner:'"Kupovina direktno od vlasnika"'},{id:'nekretnine',domain:'nekretnine.rs',owner:'"Privatno lice"'},{id:'halo',domain:'halooglasi.com',owner:'vlasnik'},{id:'nadjidom',domain:'nadjidom.com',owner:'vlasnik privatno lice'},{id:'oglasi',domain:'oglasi.rs',owner:'vlasnik'}];
+ const commercial=portals[((turn%portals.length)+portals.length)%portals.length];
+ return [...portals.map(s=>({id:s.id,query:`site:${s.domain} "Novi Sad" prodaja nekretnine ${s.owner}`,domains:[s.domain]})),
+ {id:commercial.id,query:`site:${commercial.domain} "Novi Sad" izdavanje hala magacin poslovni prostor vlasnik`,domains:[commercial.domain]},
  ...extraQueries(turn),
- ...pages.slice(0,5).map((p,i)=>({id:'facebook-'+i,query:'site:'+new URL(facebookPage(p)).host.replace('www.','')+new URL(p).pathname+' "Novi Sad" (prodajem OR prodaja OR hala OR magacin) -inurl:groups -inurl:marketplace',domains:['facebook.com']}))]}
+ ...pages.slice(0,5).map((p,i)=>({id:'facebook',query:'site:'+new URL(facebookPage(p)).host.replace('www.','')+new URL(p).pathname+' "Novi Sad" (prodajem OR prodaja OR hala OR magacin) -inurl:groups -inurl:marketplace',domains:['facebook.com']}))];
+}
