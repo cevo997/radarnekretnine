@@ -1,0 +1,31 @@
+XPERT RADAR 2.0 — ZASEBAN PRETRAŽIVAČ BEZ OBAVEZNOG TAVILY-JA
+
+KOMPLETAN PAKET
+U folderu xpert-radar-vercel nalazi se aplikacija za Vercel. U njenom podfolderu worker nalazi se zaseban pretraživač za Windows ili Docker server. Samo postavljanje aplikacije NE pokreće program za pretragu.
+
+POČETAK U 3 KORAKA
+1. Zamenite folder xpert-radar-vercel na GitHubu celim folderom iz ovog paketa. Sačekajte Ready na Vercelu. Root Directory ostaje xpert-radar-vercel. Zadržite postojeću bazu i ključeve; ne uvozite ponovo PRENOS-PODATAKA.json. U podešavanjima aplikacije treba da vidite oznaku 2.0-worker.
+2. U aplikaciji otvorite Podešavanja → Pretraga bez Tavily-ja → Napravi ključ i uključi. Sačuvajte ključ, prikazuje se samo tada.
+3. Na Windowsu otvorite xpert-radar-vercel/worker/POKRENI-WINDOWS.cmd. Program pita za HTTPS adresu aplikacije i ključ. Potreban je Node.js 22 LTS ili noviji, pristup internetu i otvoren prozor programa. Preuzima zavisnosti i Chromium. Za server i detalje pročitajte worker/POCNI-OVDE.md.
+
+ŠTA JE DODATO
+Direktno otvaranje javnih stranica kroz Chromium, trajni SQLite red i red za neslate oglase, nastavak posle prekida, odlaganje grešaka, pojedinačni oglasi i paginacija, otkrivanje objavljenih kategorija za Novi Sad, dva izvora istovremeno uz ograničenje broja zahteva, poseban ključ za povezivanje i dozvola da samo jedan računar aktivno pretražuje, status rada u aplikaciji i učitavanje rezultata na 15 sekundi dok je prikaz otvoren. Dodavanje pojedinačnog linka i zahtevi za javni telefon mogu da se proslede ovom redu.
+
+IZVORI I OBUHVAT
+4zida, Nekretnine.rs, Halo oglasi, Oglasi.rs, NadjiDom, KupujemProdajem, Mojtrg, Imovina.net. Sasomange nije izvor. Facebook samo izabrane javne stranice; objave ostaju za proveru. Prodaja svih tipova, Novi Sad i okolina. Izdavanje samo poslovni prostor, hale i magacini od 150 m². Vlasnički kontakti zahtevaju jasnu oznaku vlasnika; agencije se odbacuju. Datum objave/obnove određuje redosled, nepoznati datumi na kraju. Beleške i statusi ostaju.
+
+RAD 24/7 I OGRANIČENJA
+Nijedan server nije kupljen, povezan ili aktiviran. Na računaru program radi dok je računar uključen i bez sleep režima. Za rad 24/7 pokrenite Docker paket na svom serveru. U ovom režimu Tavily nije potreban i dugme Osveži šalje zahtev zasebnom programu. Ako program nije povezan, zahtev čeka. HTTP 401/403/429 i CAPTCHA pauziraju izvor; nema automatskog zaobilaženja. Potpuna pokrivenost i dostupnost svakog portala nisu zagarantovane. Skriveni telefoni se ne otključavaju.
+
+PROVERA OVE ISPORUKE
+Produkcijski Next.js build prolazi; sintaksa worker modula je proverena; npm audit aplikacije i workera prijavljuje 0 poznatih ranjivosti. Automatski testovi nisu pokretani po zahtevu korisnika. Čitanje stvarnih portala novim Chromium workerom ovde nije potvrđeno: preuzimanje browsera je neuspešno, a postojeći Chromium ne može da se pokrene zbog ograničenja okruženja (Operation not permitted). Windows i Docker izvršavanje ostaju da se potvrde na ciljnom računaru/serveru. Raniji Tavily rezultati nisu dokaz rada ovog novog programa. Nova verzija nije objavljena na vaš Vercel od strane nas.
+
+GIT KOMANDE
+Iz korena repozitorijuma, nakon zamene foldera:
+git add xpert-radar-vercel
+git commit -m "Add standalone Chromium property worker without required Tavily"
+git push origin main
+
+Ne dodajte stvarne ključeve, .env, worker/data, node_modules ili bazu u Git. Pri nadogradnji postojećeg workera sačuvajte worker/.env i worker/data.
+
+Commit: 5bbb55cc76a056e22145cc2065c7b9d6a4720f67

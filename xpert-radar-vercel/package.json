@@ -1,10 +1,10 @@
 {
   "name": "xpert-radar-vercel",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "next dev",
@@ -15,16 +15,16 @@
     "secrets": "node scripts/create-secrets.mjs"
   },
   "dependencies": {
-    "next": "16.3.4",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "@libsql/client": "^0.15.15",
     "lucide-react": "^1.31.0",
-    "@libsql/client": "^0.15.15"
+    "next": "16.4.5",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
     "@types/node": "^22",
     "@types/react": "^19",
-    "@types/react-dom": "^19"
+    "@types/react-dom": "^19",
+    "typescript": "^5.9.3"
   }
 }

@@ -105,3 +105,21 @@ Oglas ulazi u vlasničke kontakte samo posle čitanja detalja ili jasno označen
 Unos pojedinačnog linka i preuzimanje javnog telefona dostupni su za sve podržane portale. Nema otključavanja skrivenih brojeva. Pozadinski rad zahteva posebno povezan serverski raspored; cron endpoint sam po sebi nije aktivan raspored.
 
 Automatski testovi nisu pokretani, po zahtevu korisnika. Produkcijska izgradnja prolazi. Stvarni prolazi: 4zida 57 prihvaćenih vlasničkih oglasa, Halo 21, Nekretnine.rs 1, Mojtrg 3; raniji KP prolaz 87. To su rezultati odvojenih čitanja, ne broj novih upisa u korisnikovu bazu. Uzorci NadjiDom i Imovina sadržali su agencijske oglase i odbačeni su; potpuna pokrivenost svih portala nije zagarantovana. Kod se još mora objaviti u korisnikovom Vercel projektu.
+
+## Ispravka statusa provere i bezbednosna nadogradnja
+
+Next.js je ažuriran na 16.4.5, Node.js produkciona verzija vezana je za 22.x. Produkciona izgradnja je prošla u razvojnom okruženju sa Node.js 24; npm audit posle nadogradnje prijavljuje nula poznatih ranjivosti. Automatski testovi nisu pokretani.
+
+Preskočena provera ne prikazuje se kao uspešna provera izvora. Prikazuje se poruka servera i ranije zabeležene greške. Neuspeh internet pretrage prikazuje konkretnu poruku, a podešavanja izvora prikazuju poslednji detalj greške. Ove izmene popravljaju prikaz i zavisnosti, ali same ne dokazuju niti rešavaju uzrok neuspeha portala na korisnikovom serveru. Za to su potrebne poruke iz Podešavanja → Poslednje provere i eventualne greške. Pristup Vercel runtime logovima je odbijen (HTTP 403).
+
+## Zaseban Chromium pretraživač (bez obaveznog Tavily-ja)
+
+Paket sada sadrži `worker/`, zaseban Node.js program za Windows ili Docker server. Podešava se iz aplikacije, preko Podešavanja → Pretraga bez Tavily-ja. Pratite **worker/POCNI-OVDE.md**. Windows pokretanje je **worker/POKRENI-WINDOWS.cmd**.
+
+U tom režimu `Osveži oglase` stavlja zahtev zasebnom programu; ne pokreće Tavily pozive. Pretraživač čita javne liste i detalje izabranih osam portala, čuva SQLite red, odlaže neuspehe, šalje rezultate kroz ključ ograničen na konfiguraciju/uvoz oglasa i čuva neslate zapise. Server čuva samo hash ključa, a vremenska dozvola obrade sprečava dva računara da istovremeno rade istu pretragu. Statusi su odvojeni oznakom `-worker`.
+
+Taj program treba **posebno pokrenuti**: objava Vercel aplikacije sama ne pokreće Chromium. Nijedan server nije kupljen, podešen ili aktiviran. Za rad 24/7 potreban je aktivan server; na računaru radi samo dok su računar i program uključeni. Postojeća baza, kontakti, statusi i napomene ostaju.
+
+Provera ove verzije: produkcijski build aplikacije i sintaksna provera worker modula; npm audit worker zavisnosti prijavljuje 0 poznatih ranjivosti. Automatski testovi nisu pokretani po zahtevu korisnika. Stvarno čitanje portala novim Chromium workerom **nije potvrđeno** u ovom okruženju: preuzimanje browsera vraća neispravan ZIP, a postojeći sistemski Chromium ne može da otvori socket (`Operation not permitted`). Docker izvršavanje i Windows pokretanje nisu ovde potvrđeni. Raniji Tavily rezultati navedeni iznad nisu dokaz rada novog workera.
+
+Blokade 401/403/429 i CAPTCHA izazivaju pauzu izvora; nema automatskog zaobilaženja. Linkovi se otkrivaju samo iz konkretnih javnih lista i objavljenih linkova kategorija. Potpuna pokrivenost svih oglasa nije zagarantovana.
