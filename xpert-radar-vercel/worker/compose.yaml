@@ -1,0 +1,13 @@
+services:
+  radar-worker:
+    build:
+      context: ..
+      dockerfile: worker/Dockerfile
+    env_file: .env
+    init: true
+    restart: unless-stopped
+    shm_size: 1gb
+    volumes:
+      - radar-worker-data:/app/worker/data
+volumes:
+  radar-worker-data:
